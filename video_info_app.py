@@ -64,8 +64,11 @@ with st.form("my_form"):
                                        modelId=LanguageModels.NOVA_PRO,
                                        boto3_session=session,
                                        max_tokens=2048,
-                                       max_frames=180,
                                        temperature=0.0,
+                                       max_frames=360,
+                                       frame_interval=2.0,
+                                       use_converse_api=True,
+                                       enable_cri=True,
                                        system_prompt=SystemPrompts().SummarySysPrompt)
                     rresponse = da.run(message=question)
                 except Exception as e:
