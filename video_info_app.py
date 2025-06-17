@@ -5,6 +5,7 @@ import boto3
 import botocore
 from rhubarb import VideoAnalysis, DocAnalysis, LanguageModels, SystemPrompts
 import uuid
+import re
 
 awsconfig = botocore.config.Config(
     retries = {"mode": "adaptive"},
@@ -21,6 +22,9 @@ def upload_to_s3(upfile, bucket_name=bucket_name, s3_file_name=None):
     # If no specific S3 file name is provided, use the original filename
     if s3_file_name is None:
         s3_file_name = upfile.name
+    # replace all non 0-9a-zA-Z with underscore
+    s3_file_name = re.sub('[^0-9a-zA-Z]+', '_', s3_file_name)
+    # create proper s3 filename in video subdir and with uuid
     s3_file_name = 'video/' + str(uuid.uuid4()) + '_' + s3_file_name.replace(' ', '_')
     # Create S3 client
     # Note: AWS credentials should be configured via environment variables
