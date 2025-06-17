@@ -63,8 +63,8 @@ with st.form("my_form"):
                     da = VideoAnalysis(file_path=s3_uri,
                                        modelId=LanguageModels.NOVA_PRO,
                                        boto3_session=session,
-                                       max_tokens=4096,
-                                       max_frames=60,
+                                       max_tokens=2048,
+                                       max_frames=180,
                                        temperature=0.0,
                                        system_prompt=SystemPrompts().SummarySysPrompt)
                     rresponse = da.run(message=question)
