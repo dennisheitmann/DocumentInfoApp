@@ -64,6 +64,7 @@ with st.form("my_form"):
                                        modelId=LanguageModels.NOVA_PRO,
                                        boto3_session=session,
                                        max_tokens=4096,
+                                       max_frames=60,
                                        temperature=0.0,
                                        system_prompt=SystemPrompts().SummarySysPrompt)
                     rresponse = da.run(message=question)
