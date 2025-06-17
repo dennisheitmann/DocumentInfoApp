@@ -11,7 +11,7 @@ awsconfig = botocore.config.Config(
     retries = {"mode": "adaptive"},
     region_name = 'us-east-1',
     tcp_keepalive = True,
-    read_timeout = 90,
+    read_timeout = 180,
     connect_timeout = 5,
 )
 region_name = 'us-east-1'
