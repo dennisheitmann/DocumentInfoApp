@@ -8,10 +8,10 @@ import uuid
 import re
 
 awsconfig = botocore.config.Config(
-    retries = {"mode": "adaptive"},
+    retries = {"max_attempts": 1},
     region_name = 'us-east-1',
     tcp_keepalive = True,
-    read_timeout = 180,
+    read_timeout = 3600,
     connect_timeout = 5,
 )
 region_name = 'us-east-1'
