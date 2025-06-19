@@ -68,8 +68,7 @@ with st.form("my_form"):
                                        max_frames=360,
                                        frame_interval=2.0,
                                        use_converse_api=True,
-                                       enable_cri=True,
-                                       system_prompt=SystemPrompts().SummarySysPrompt)
+                                       enable_cri=True)
                     rresponse = da.run(message=question)
                 except Exception as e:
                     st.error("Error reading video: " + str(e))
