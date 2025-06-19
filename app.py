@@ -17,7 +17,7 @@ awsconfig = botocore.config.Config(
     retries = {"mode": "adaptive"},
     region_name = 'us-east-1',
     tcp_keepalive = True,
-    read_timeout = 90,
+    read_timeout = 300,
     connect_timeout = 5,
 )
 
@@ -61,13 +61,13 @@ with st.form("my_form"):
                 session = boto3.Session(region_name='us-east-1')
                 if bypage:
                     da = DocAnalysis(file_path=tmp_file_path,
-                                     modelId=LanguageModels.CLAUDE_SONNET_V2,
+                                     modelId=LanguageModels.NOVA_PRO,
                                      max_tokens=4096,
                                      temperature=0.0,
                                      boto3_session=session)
                 else:
                     da = DocAnalysis(file_path=tmp_file_path,
-                                     modelId=LanguageModels.CLAUDE_SONNET_V2,
+                                     modelId=LanguageModels.NOVA_PRO,
                                      boto3_session=session,
                                      max_tokens=4096,
                                      temperature=0.0,
