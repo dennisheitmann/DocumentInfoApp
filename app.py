@@ -26,17 +26,26 @@ st.header('Information Extraction Tool')
 
 from PIL import Image
 
-def jpg_to_pdf_pillow(jpg_path, pdf_path):
-    # Open the image
-    image = Image.open(jpg_path)
+def jpg_to_pdf_pillow_bytesio(jpg_bytes, output_pdf=None):
+    # Open the image from bytes
+    image = Image.open(BytesIO(jpg_bytes))
     # Convert to RGB if the image is in RGBA mode
     if image.mode == 'RGBA':
         image = image.convert('RGB')
-    # Save as PDF
-    image.save(pdf_path, "PDF", resolution=300.0)
+    # Create a BytesIO object to store the PDF
+    pdf_bytes = BytesIO()
+    # Save as PDF to the BytesIO object
+    image.save(pdf_bytes, "PDF", resolution=300.0)
+    # Reset the pointer to the beginning of the BytesIO object
+    pdf_bytes.seek(0)
+    # If output_pdf is provided, write to file
+    if output_pdf:
+        with open(output_pdf, 'wb') as f:
+            f.write(pdf_bytes.getvalue())
+    return pdf_bytes
 
 with st.container():
-    uploaded_file = st.file_uploader("**Choose a file**", accept_multiple_files=False, type=['pdf', 'jpg'])
+    uploaded_file = st.file_uploader("**Choose a file**", accept_multiple_files=False, type=['pdf', 'jpg', 'png'])
     # "Please output all document information. Please use also tables."
     question = st.text_area('Question or Task ', value='Please provide a concise summary of the document highlighting the main points. Then extract all relevant information as a structured JSON object with key-value pairs. Include important entities, dates, numerical data, relationships, and any other significant information present in the document. Organize related information into nested objects where appropriate for better clarity', placeholder='Enter question or task...') 
     bypage = st.toggle('Apply the question to each page individually.') 
@@ -45,10 +54,14 @@ with st.form("my_form"):
     submitted = st.form_submit_button("Start analysis")
     if submitted is True and uploaded_file is None:
         st.error('Error: No file uploaded')
-    if submitted is True and len(question)<1:
+    elif submitted is True and len(question)<1:
         st.error('Error: Question is empty')
-    if submitted is True and uploaded_file is not None and len(question)>0:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
+    elif submitted is True and uploaded_file is not None and len(question)>0:
+        if os.path.splitext(uploaded_file.name)[1].lower() in ['.jpg', '.jpeg']:
+            new_file_path = uploaded_file.name + '.pdf'
+            uploaded_file = jpg_to_pdf_pillow_bytesio(uploaded_file.getvalue())
+            uploaded_file.name = new_file_path
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1].lower()) as tmp_file:
             try:
                 # Reset the file pointer of the uploaded file to the beginning
                 uploaded_file.seek(0)
