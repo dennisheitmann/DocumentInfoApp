@@ -47,7 +47,7 @@ def jpg_to_pdf_pillow_bytesio(jpg_bytes, output_pdf=None):
 with st.container():
     uploaded_file = st.file_uploader("**Choose a file**", accept_multiple_files=False, type=['pdf', 'jpg', 'png'])
     # "Please output all document information. Please use also tables."
-    question = st.text_area('Question or Task ', value='Please provide a concise summary of the document highlighting the main points. Then extract all relevant information as a structured JSON object with key-value pairs. Include important entities, dates, numerical data, relationships, and any other significant information present in the document. Organize related information into nested objects where appropriate for better clarity', placeholder='Enter question or task...') 
+    question = st.text_area('Question or Task ', value='Please provide a concise summary of the document highlighting the main points. Then extract all information as a structured JSON object with key-value pairs. Include important entities, dates, numerical data, relationships, and any other significant information present in the document. Organize related information into nested objects where appropriate for better clarity', placeholder='Enter question or task...') 
     bypage = st.toggle('Apply the question to each page individually.') 
 
 with st.form("my_form"):
