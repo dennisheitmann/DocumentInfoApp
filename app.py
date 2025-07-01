@@ -100,12 +100,13 @@ with st.form("my_form"):
                 if bypage:
                     if "output" in result:
                         st.success("PDF processed successfully!")
-                        
+                        # Parse the output string as JSON
+                        output_data = json.loads(result["output"])
                         # Create tabs for each page
-                        tabs = st.tabs([f"Page {page['page']}" for page in result["output"]])
+                        tabs = st.tabs([f"Page {page['page']}" for page in output_data])
                         
                         # Fill each tab with content
-                        for i, page in enumerate(result["output"]):
+                        for i, page in enumerate(output_data):
                             with tabs[i]:
                                 st.subheader(f"Page {page['page']}")
                                 st.write(f"**Detected Languages:** {', '.join(page['detected_languages'])}")
