@@ -77,14 +77,15 @@ with st.form("my_form"):
                                      modelId=LanguageModels.NOVA_PRO,
                                      max_tokens=4096,
                                      temperature=0.0,
-                                     boto3_session=session)
+                                     boto3_session=session,
+                                     system_prompt=SystemPrompts().SchemaGenSysPrompt)
                 else:
                     da = DocAnalysis(file_path=tmp_file_path,
                                      modelId=LanguageModels.NOVA_PRO,
                                      boto3_session=session,
                                      max_tokens=4096,
                                      temperature=0.0,
-                                     system_prompt=SystemPrompts().SummarySysPrompt)
+                                     system_prompt=SystemPrompts().SchemaGenSysPrompt)
                 rresponse = da.run(message=question)
                 os.unlink(tmp_file_path)
             except Exception as e:
