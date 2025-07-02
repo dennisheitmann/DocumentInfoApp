@@ -107,18 +107,22 @@ with st.form("my_form"):
                 # Assuming response is a dictionary (in "output") with the structure you provided
                 output_data = ast.literal_eval(str(rresponse["output"]))
                 try:
-                    tab_labels = [f"Page {n+1}" for n in range(len(output_data))]
-                    tabs = st.tabs(tab_labels)
-                    for n, page in enumerate(output_data):
-                        with tabs[n]:
-                            page = output_data[n]
-                            # Fill each tab with content
-                            st.subheader(f"Page {page['page']}")
-                            st.write(f"**Detected Languages:** {', '.join(page['detected_languages'])}")
-                            st.write("**Content:**")
-                            st.write(page['content'])
+                    if len(output_data) > 1:
+                        tab_labels = [f"Page {n+1}" for n in range(len(output_data))]
+                        tabs = st.tabs(tab_labels)
+                        for n, page in enumerate(output_data):
+                            with tabs[n]:
+                                page = output_data[n]
+                                # Fill each tab with content
+                                st.subheader(f"Page {page['page']}")
+                                st.write(f"**Detected Languages:** {', '.join(page['detected_languages'])}")
+                                st.write("**Page Content:**")
+                                st.write(page['content'])
+                    else:
+                        st.write("**Document Content:**")
+                        st.write(output_data)
                 except Exception as e:
-                    st.write("**Content:**")
+                    st.write("**Document Content:**")
                     st.write(output_data)
             except Exception as e:
                 st.write(str(rresponse))
