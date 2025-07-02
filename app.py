@@ -51,23 +51,26 @@ with st.container():
     # "Please output all document information. Please use also tables."
     myprompt = "Please provide a summary first. Double-check the context of all information. Do not discard any information. Extract all information including all values as a structured JSON object with key-value pairs. Include entities, dates, numerical data, relationships, and any other significant information present in the document. Organize related information into nested objects including numbered pages where appropriate for better clarity."
     question = st.text_area('Question or Task ', value=myprompt, placeholder='Enter question or task...')
-    mysysprompt = st.selectbox('Select additional system prompt', ('SchemaSysPrompt', 'SummarySysPrompt', 'None'))
-    if mysysprompt == 'SchemaSysPrompt':
-        sysprompt = SystemPrompts().SchemaSysPrompt
-    elif mysysprompt == 'SummarySysPrompt':
-        sysprompt = SystemPrompts().SummarySysPrompt
-    else:
-        sysprompt = ''
-    mymodel = st.selectbox('Select LLM', ('AWS NOVA PRO', 'Claude Sonnet 3.5 v2'))
-    if mymodel == 'Claude Sonnet 3.5 v2':
-        modelId = LanguageModels.CLAUDE_SONNET_V2
-    elif mymodel == 'Claude Sonnet 3.7':
-        modelId = LanguageModels.CLAUDE_SONNET_37
-    elif mymodel == 'Claude Sonnet 4':
-        modelId = LanguageModels.CLAUDE_SONNET_4
-    else:
-        modelId = LanguageModels.NOVA_PRO
-        
+    col1, col2 = st.columns(2)
+    with col1:
+        mysysprompt = st.selectbox('Select additional system prompt (may overrule your prompt)', ('SchemaSysPrompt', 'SummarySysPrompt', 'None'))
+        if mysysprompt == 'SchemaSysPrompt':
+            sysprompt = SystemPrompts().SchemaSysPrompt
+        elif mysysprompt == 'SummarySysPrompt':
+            sysprompt = SystemPrompts().SummarySysPrompt
+        else:
+            sysprompt = ''
+    with col2:
+        mymodel = st.selectbox('Select LLM', ('AWS NOVA PRO', 'Claude Sonnet 3.5 v2'))
+        if mymodel == 'Claude Sonnet 3.5 v2':
+            modelId = LanguageModels.CLAUDE_SONNET_V2
+        elif mymodel == 'Claude Sonnet 3.7':
+            modelId = LanguageModels.CLAUDE_SONNET_37
+        elif mymodel == 'Claude Sonnet 4':
+            modelId = LanguageModels.CLAUDE_SONNET_4
+        else:
+            modelId = LanguageModels.NOVA_PRO
+
 with st.form("my_form"):
     submitted = st.form_submit_button("Start analysis")
     if submitted is True and uploaded_file is None:
