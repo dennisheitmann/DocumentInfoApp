@@ -47,9 +47,18 @@ def jpg_to_pdf_pillow_bytesio(jpg_bytes, output_pdf=None):
 with st.container():
     uploaded_file = st.file_uploader("**Choose a file**", accept_multiple_files=False, type=['pdf', 'jpg', 'png'])
     # "Please output all document information. Please use also tables."
-    question = st.text_area('Question or Task ', value='Please provide a concise summary of the document highlighting the main points. Then extract all information as a structured JSON object with key-value pairs. Include important entities, dates, numerical data, relationships, and any other significant information present in the document. Organize related information into nested objects where appropriate for better clarity', placeholder='Enter question or task...') 
-    bypage = st.toggle('Apply the question to each page individually.') 
-
+    myprompt = "Please provide a summary first. Double-check the context of all information. Do not discard any information. Extract all information including all values as a structured JSON object with key-value pairs. Include entities, dates, numerical data, relationships, and any other significant information present in the document. Organize related information into nested objects including numbered pages where appropriate for better clarity."
+    question = st.text_area('Question or Task ', value=myprompt, placeholder='Enter question or task...')
+    mymodel = st.selectbox('Select LLM', ('AWS NOVA PRO', 'Claude Sonnet 3.5 v2'))
+    if mymodel == 'Claude Sonnet 3.5 v2':
+        modelId = LanguageModels.CLAUDE_SONNET_V2
+    elif mymodel == 'Claude Sonnet 3.7':
+        modelId = LanguageModels.CLAUDE_SONNET_37
+    elif mymodel == 'Claude Sonnet 4':
+        modelId = LanguageModels.CLAUDE_SONNET_4
+    else:
+        modelId = LanguageModels.NOVA_PRO
+        
 with st.form("my_form"):
     submitted = st.form_submit_button("Start analysis")
     if submitted is True and uploaded_file is None:
@@ -71,21 +80,15 @@ with st.form("my_form"):
             except Exception as e:
                 st.error("Error reading file: " + str(e))
             try:
-                session = boto3.Session(region_name='us-east-1')
-                if bypage:
-                    da = DocAnalysis(file_path=tmp_file_path,
-                                     modelId=LanguageModels.NOVA_PRO,
-                                     max_tokens=4096,
-                                     temperature=0.0,
-                                     boto3_session=session,
-                                     system_prompt=SystemPrompts().SchemaGenSysPrompt)
-                else:
-                    da = DocAnalysis(file_path=tmp_file_path,
-                                     modelId=LanguageModels.NOVA_PRO,
-                                     boto3_session=session,
-                                     max_tokens=4096,
-                                     temperature=0.0,
-                                     system_prompt=SystemPrompts().SchemaGenSysPrompt)
+                session = boto3.Session(region_name=awsregion)
+                da = DocAnalysis(file_path=tmp_file_path,
+                                 modelId=modelId,
+                                 boto3_session=session,
+                                 max_tokens=4096,
+                                 temperature=0.0,
+                                 enable_cri=True,
+                                 sliding_window_overlap=2,
+                                 system_prompt=SystemPrompts().SchemaSysPrompt)
                 rresponse = da.run(message=question)
                 os.unlink(tmp_file_path)
             except Exception as e:
@@ -97,14 +100,12 @@ with st.form("my_form"):
                     result = json.loads(rresponse)
                 else:
                     result = rresponse
-                if bypage:
-                    if "output" in result:
+                if "output" in result:
+                    output_data = result["output"]
+                    if "page" in output_data:
                         st.success("PDF processed successfully!")
-                        # Parse the output string as JSON
-                        output_data = json.loads(result["output"])
                         # Create tabs for each page
                         tabs = st.tabs([f"Page {page['page']}" for page in output_data])
-                        
                         # Fill each tab with content
                         for i, page in enumerate(output_data):
                             with tabs[i]:
@@ -112,9 +113,9 @@ with st.form("my_form"):
                                 st.write(f"**Detected Languages:** {', '.join(page['detected_languages'])}")
                                 st.write("**Content:**")
                                 st.write(page['content'])
-                else:
-                    st.write("**Content:**")
-                    st.write(result["output"])
+                    else:
+                        st.write("**Content:**")
+                        st.write(result["output"])
                 # Display token usage if available
                 st.divider()
                 if "token_usage" in result:
