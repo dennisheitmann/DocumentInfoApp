@@ -13,9 +13,11 @@ from rhubarb import DocAnalysis, LanguageModels, SystemPrompts
 import tempfile
 import shutil
 
+awsregion = 'us-east-1'
+
 awsconfig = botocore.config.Config(
     retries = {"mode": "adaptive"},
-    region_name = 'us-east-1',
+    region_name = awsregion,
     tcp_keepalive = True,
     read_timeout = 300,
     connect_timeout = 5,
