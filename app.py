@@ -51,6 +51,13 @@ with st.container():
     # "Please output all document information. Please use also tables."
     myprompt = "Please provide a summary first. Double-check the context of all information. Do not discard any information. Extract all information including all values as a structured JSON object with key-value pairs. Include entities, dates, numerical data, relationships, and any other significant information present in the document. Organize related information into nested objects including numbered pages where appropriate for better clarity."
     question = st.text_area('Question or Task ', value=myprompt, placeholder='Enter question or task...')
+    mysysprompt = st.selectbox('Select additional system prompt', ('SchemaSysPrompt', 'SummarySysPrompt', 'None'))
+    if mysysprompt == 'SchemaSysPrompt':
+        sysprompt = SystemPrompts().SchemaSysPrompt
+    elif mysysprompt == 'SummarySysPrompt':
+        sysprompt = SystemPrompts().SummarySysPrompt
+    else:
+        sysprompt = ''
     mymodel = st.selectbox('Select LLM', ('AWS NOVA PRO', 'Claude Sonnet 3.5 v2'))
     if mymodel == 'Claude Sonnet 3.5 v2':
         modelId = LanguageModels.CLAUDE_SONNET_V2
@@ -90,43 +97,43 @@ with st.form("my_form"):
                                  temperature=0.0,
                                  enable_cri=True,
                                  sliding_window_overlap=2,
-                                 system_prompt=SystemPrompts().SchemaSysPrompt)
+                                 system_prompt=sysprompt)
                 rresponse = da.run(message=question)
                 os.unlink(tmp_file_path)
             except Exception as e:
                 st.error("Error reading PDF file: " + str(e))
             try:
                 # Parse the response
-                # Assuming response is a JSON string or dictionary with the structure you provided
-                if isinstance(rresponse, str):
-                    result = json.loads(rresponse)
-                else:
-                    result = rresponse
-                if "output" in result:
-                    output_data = result["output"]
-                    if "page" in output_data:
-                        st.success("PDF processed successfully!")
-                        # Create tabs for each page
-                        tabs = st.tabs([f"Page {page['page']}" for page in output_data])
-                        # Fill each tab with content
-                        for i, page in enumerate(output_data):
-                            with tabs[i]:
-                                st.subheader(f"Page {page['page']}")
-                                st.write(f"**Detected Languages:** {', '.join(page['detected_languages'])}")
-                                st.write("**Content:**")
-                                st.write(page['content'])
-                    else:
-                        st.write("**Content:**")
-                        st.write(result["output"])
-                # Display token usage if available
-                st.divider()
-                if "token_usage" in result:
-                    with st.expander("Token Usage"):
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("Input Tokens", result["token_usage"]["input_tokens"])
-                        col2.metric("Output Tokens", result["token_usage"]["output_tokens"])
-                        col3.metric("Total Tokens", result["token_usage"]["total_tokens"])
-                        st.write(f"**Used LLM:** {mymodel}")
+                # Assuming response is a dictionary (in "output") with the structure you provided
+                output_data = ast.literal_eval(str(rresponse["output"]))
+                try:
+                    tab_labels = [f"Page {n+1}" for n in range(len(output_data))]
+                    tabs = st.tabs(tab_labels)
+                    for n, page in enumerate(output_data):
+                        with tabs[n]:
+                            page = output_data[n]
+                            # Fill each tab with content
+                            st.subheader(f"Page {page['page']}")
+                            st.write(f"**Detected Languages:** {', '.join(page['detected_languages'])}")
+                            st.write("**Content:**")
+                            st.write(page['content'])
+                except Exception as e:
+                    st.write("**Content:**")
+                    st.write(output_data)
             except Exception as e:
-                st.write(rresponse)
+                st.write(str(rresponse))
                 st.error("Response error: " + str(e))
+            st.divider()
+            # Display token usage if available
+            try:
+                token_data = ast.literal_eval(str(rresponse["token_usage"]))
+                with st.expander("Token Usage"):
+                    col1, col2, col3 = st.columns(3)
+                    col1.metric("Input Tokens", token_data["input_tokens"])
+                    col2.metric("Output Tokens", token_data["output_tokens"])
+                    col3.metric("Total Tokens", token_data["total_tokens"])
+                    st.write(f"**Used LLM:** {mymodel}")
+            except Exception as e:
+                st.error("Token usage error: " + str(e))
+    else:
+        pass
