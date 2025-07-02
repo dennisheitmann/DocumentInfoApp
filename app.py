@@ -107,7 +107,7 @@ with st.form("my_form"):
                 # Assuming response is a dictionary (in "output") with the structure you provided
                 output_data = ast.literal_eval(str(rresponse["output"]))
                 try:
-                    if len(output_data) > 1:
+                    if sysprompt == '' and len(output_data) > 1:
                         tab_labels = [f"Page {n+1}" for n in range(len(output_data))]
                         tabs = st.tabs(tab_labels)
                         for n, page in enumerate(output_data):
