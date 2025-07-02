@@ -126,6 +126,7 @@ with st.form("my_form"):
                         col1.metric("Input Tokens", result["token_usage"]["input_tokens"])
                         col2.metric("Output Tokens", result["token_usage"]["output_tokens"])
                         col3.metric("Total Tokens", result["token_usage"]["total_tokens"])
+                        st.write(f"**Used LLM:** {mymodel}")
             except Exception as e:
                 st.write(rresponse)
                 st.error("Response error: " + str(e))
