@@ -12,6 +12,7 @@ import botocore
 from rhubarb import DocAnalysis, LanguageModels, SystemPrompts
 import tempfile
 import shutil
+import ast
 
 awsregion = 'us-east-1'
 
