@@ -49,8 +49,7 @@ def jpg_to_pdf_pillow_bytesio(jpg_bytes, output_pdf=None):
 
 with st.container():
     uploaded_file = st.file_uploader("**Choose a file**", accept_multiple_files=False, type=['pdf', 'jpg', 'png'])
-    # "Please output all document information. Please use also tables."
-    myprompt = "Please provide a summary first. Double-check the context of all information. Do not discard any information. Extract all information including all values as a structured JSON object with key-value pairs. Include entities, dates, numerical data, relationships, and any other significant information present in the document. Organize related information into nested objects including numbered pages where appropriate for better clarity."
+    myprompt = "Please provide a summary on the whole document. Then extract all information including all values and present it in a well-structured format for readability. Include entities, dates, numerical data, relationships, and any other significant information present in the document. Use headings, bullet points, and tables where appropriate. For images, provide a numbered list with page numbers and descriptions. Format the output to be human-readable with clear sections and visual hierarchy. Double-check the context of all information. Do not discard any information."
     question = st.text_area('Question or Task ', value=myprompt, placeholder='Enter question or task...')
     col1, col2 = st.columns(2)
     with col1:
@@ -62,13 +61,11 @@ with st.container():
         else:
             sysprompt = ''
     with col2:
-        mymodel = st.selectbox('Select LLM', ('AWS NOVA PRO', 'Claude Sonnet 3.5 v2'))
+        mymodel = st.selectbox('Select LLM', ('AWS NOVA PRO', 'Claude Sonnet 3.5 v2', 'Claude Sonnet 3.7'))
         if mymodel == 'Claude Sonnet 3.5 v2':
             modelId = LanguageModels.CLAUDE_SONNET_V2
         elif mymodel == 'Claude Sonnet 3.7':
             modelId = LanguageModels.CLAUDE_SONNET_37
-        elif mymodel == 'Claude Sonnet 4':
-            modelId = LanguageModels.CLAUDE_SONNET_4
         else:
             modelId = LanguageModels.NOVA_PRO
 
