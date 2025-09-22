@@ -122,14 +122,6 @@ def run_my_langchain(query: str):
 @st.cache_data(ttl='12h')
 def da_run(tmp_file_path, modelId, pages_no, sysprompt, question):
     reset_chat_context()
-    awsregion = str(config['aws']['bedrock']['region'])
-    awsconfig = botocore.config.Config(
-        retries = {"mode": "adaptive"},
-        region_name = awsregion,
-        tcp_keepalive = True,
-        read_timeout = 1000,
-        connect_timeout = 5,
-    )
     session = boto3.Session(region_name=awsregion)
     bedrock = session.client('bedrock-runtime', verify=False, config=awsconfig)
     da = DocAnalysis(file_path=tmp_file_path,
