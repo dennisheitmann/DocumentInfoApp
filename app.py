@@ -349,11 +349,6 @@ Important: The output of all information, including all values, should be a stru
                     elif submitted is True and len(question)<1:
                         st.error('Error: Question is empty')
                     elif submitted is True and tmp_file_path is not None and len(question)>0:
-                        anon_usage_logging(tool = 'pdfinfo', 
-                                           docname = str(uploaded_file.name), 
-                                           mode = str(os.path.splitext(uploaded_file.name)[1].lower()), 
-                                           server = 'dev', 
-                                           usertimezone = 'None')
                         try:
                             rresponse = da_run(tmp_file_path, modelId, pages_no, sysprompt, question)
                             os.unlink(tmp_file_path)
