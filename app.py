@@ -13,6 +13,22 @@ from rhubarb import DocAnalysis, LanguageModels, SystemPrompts
 import tempfile
 import shutil
 import ast
+import PyPDF2
+import json
+from langchain import hub
+from langchain_aws import ChatBedrock, ChatBedrockConverse
+from langchain_core.messages import HumanMessage
+from langchain.chains import LLMMathChain
+from langchain.agents import Tool
+from langchain.agents import initialize_agent
+from langchain.agents import AgentExecutor
+from langchain.agents import AgentType
+from langchain.agents import ConversationalChatAgent
+from langchain.memory import ConversationBufferMemory
+from langchain.chains import ConversationChain
+from langchain.tools import BaseTool, StructuredTool, tool
+from langchain_experimental.utilities.python import PythonREPL
+from langchain_experimental.tools import PythonREPLTool
 
 awsregion = 'us-east-1'
 
@@ -23,6 +39,122 @@ awsconfig = botocore.config.Config(
     read_timeout = 300,
     connect_timeout = 5,
 )
+
+# define function for bedrock
+def initialize_bedrock_llm(session):
+    bedrock = session.client('bedrock-runtime',
+                             'us-east-1',
+                             endpoint_url='https://bedrock-runtime.us-east-1.amazonaws.com',
+                             verify=False,
+                             config=awsconfig)
+    llm = ChatBedrockConverse(client=bedrock,
+                              model_id="us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+                              temperature=0.1,
+                              max_tokens=None)
+    return llm
+
+# Initalize boto3 and bedrock session
+session = boto3.Session()
+llm = initialize_bedrock_llm(session)
+
+# numexpr evaluation
+@tool
+def ne_evaluate(math_str: str) -> str:
+    """MathChain for things which can be calculated: input is a string expression which have to be valid Python expression with numpy constants (np)"""
+    import numexpr as ne
+    import numpy as np
+    try:
+        result = str(ne.evaluate(math_str))
+    except Exception as e:
+        result = str(e)
+    return result
+
+tools = [
+    # Python REPL for things which can be calculated using Python
+    # PythonREPLTool(),
+    # MathChain for things which can be calculated
+    Tool(
+        name = "NumExpr",
+        func = ne_evaluate,
+        description = "useful for calculations",
+    ),
+]
+
+# Langchain Agent
+memory = ConversationBufferMemory()
+agent = initialize_agent(
+    tools = tools,
+    llm = llm,
+    agent = AgentType.STRUCTURED_CHAT_ZERO_SHOT_REACT_DESCRIPTION,
+    memory = memory,
+    max_iterations = 10,
+    handle_parsing_errors = True,
+    verbose = True
+    )
+
+def run_my_langchain(query: str):
+    # Variables for Bedrock API
+    modelId = 'us.anthropic.claude-3-5-sonnet-20241022-v2:0'
+    contentType = 'application/json'
+    accept = 'application/json'
+    # Messages
+    messages = [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": query
+          }
+        ]
+      }
+    ]
+    # Body
+    body = json.dumps({
+        "anthropic_version": "bedrock-2023-05-31",
+        "max_tokens": 5000,
+        "messages": messages
+    })
+    with no_ssl_verification():
+        response = agent.invoke(input = body, return_only_outputs=False)
+    return response
+
+@st.cache_data(ttl='12h')
+def da_run(tmp_file_path, modelId, pages_no, sysprompt, question):
+    reset_chat_context()
+    awsregion = str(config['aws']['bedrock']['region'])
+    awsconfig = botocore.config.Config(
+        retries = {"mode": "adaptive"},
+        region_name = awsregion,
+        tcp_keepalive = True,
+        read_timeout = 1000,
+        connect_timeout = 5,
+    )
+    session = boto3.Session(region_name=awsregion)
+    bedrock = session.client('bedrock-runtime', verify=False, config=awsconfig)
+    da = DocAnalysis(file_path=tmp_file_path,
+                     modelId=modelId,
+                     boto3_session=session,
+                     max_tokens=4096,
+                     temperature=0.0,
+                     enable_cri=True,
+                     pages=pages_no,
+                     sliding_window_overlap=0,
+                     use_converse_api=True,
+                     system_prompt=sysprompt)
+    # Manually set the bedrock client
+    da._bedrock_client = bedrock  # Note: accessing private attributes is generally not recommended
+    question = question + f' The date of today: {datetime.now()}'
+    return da.run(message=question)
+
+# Function to reset chat context
+def reset_chat_context():
+    # Reset all session state variables related to chat
+    for key in ["message", "answer_claude", "my_input", "output_data"]:
+        if key in st.session_state:
+            st.session_state[key] = "" if isinstance(st.session_state.get(key, ""), str) else []
+    # Reset memory in the agent
+    memory.clear()
 
 st.set_page_config(page_title='Information Extraction', layout='wide')
 st.header('Information Extraction Tool')
@@ -48,37 +180,24 @@ def jpg_to_pdf_pillow_bytesio(jpg_bytes, output_pdf=None):
     return pdf_bytes
 
 with st.container():
-    uploaded_file = st.file_uploader("**Choose a file**", accept_multiple_files=False, type=['pdf', 'jpg', 'png'])
-    myprompt = "Please provide a summary on the whole document. Then extract all information including all values and present it in a well-structured format for readability. Include entities, dates, numerical data, relationships, and any other significant information present in the document. Use headings, bullet points, and tables where appropriate. For images, provide a numbered list with page numbers and descriptions. Format the output to be human-readable with clear sections and visual hierarchy. Double-check the context of all information. Do not discard any information."
-    question = st.text_area('Question or Task ', value=myprompt, placeholder='Enter question or task...')
-    col1, col2 = st.columns(2)
-    with col1:
-        mysysprompt = st.selectbox('Select additional system prompt (may overrule your prompt)', ('SchemaSysPrompt', 'SummarySysPrompt', 'None'))
-        if mysysprompt == 'SchemaSysPrompt':
-            sysprompt = SystemPrompts().SchemaSysPrompt
-        elif mysysprompt == 'SummarySysPrompt':
-            sysprompt = SystemPrompts().SummarySysPrompt
-        else:
-            sysprompt = ''
-    with col2:
-        mymodel = st.selectbox('Select LLM', ('AWS NOVA PRO', 'Claude Sonnet 3.5 v2', 'Claude Sonnet 3.7'))
-        if mymodel == 'Claude Sonnet 3.5 v2':
-            modelId = LanguageModels.CLAUDE_SONNET_V2
-        elif mymodel == 'Claude Sonnet 3.7':
-            modelId = LanguageModels.CLAUDE_SONNET_37
-        else:
-            modelId = LanguageModels.NOVA_PRO
-
-with st.form("my_form"):
-    submitted = st.form_submit_button("Start analysis")
-    if submitted is True and uploaded_file is None:
-        st.error('Error: No file uploaded')
-    elif submitted is True and len(question)<1:
-        st.error('Error: Question is empty')
-    elif submitted is True and uploaded_file is not None and len(question)>0:
+    # Initialize session state variables at the beginning of your app
+    if "message" not in st.session_state:
+        st.session_state.message = []
+    if "answer_claude" not in st.session_state:
+        st.session_state.answer_claude = ""
+    if "my_input" not in st.session_state:
+        st.session_state.my_input = ""
+    if "output_data" not in st.session_state:
+        st.session_state.output_data = ""
+    uploaded_file = st.file_uploader("**Choose a file**", accept_multiple_files=False, type=['pdf', 'jpg', 'png'], on_change=reset_chat_context)
+    if uploaded_file is not None:
         if os.path.splitext(uploaded_file.name)[1].lower() in ['.jpg', '.jpeg']:
             new_file_path = uploaded_file.name + '.pdf'
-            uploaded_file = jpg_to_pdf_pillow_bytesio(uploaded_file.getvalue())
+            uploaded_file = img_to_pdf_pillow_bytesio(uploaded_file.getvalue())
+            uploaded_file.name = new_file_path
+        elif os.path.splitext(uploaded_file.name)[1].lower() in ['.png']:
+            new_file_path = uploaded_file.name + '.pdf'
+            uploaded_file = img_to_pdf_pillow_bytesio(uploaded_file.getvalue())
             uploaded_file.name = new_file_path
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1].lower()) as tmp_file:
             try:
@@ -89,56 +208,259 @@ with st.form("my_form"):
                 tmp_file_path = tmp_file.name
             except Exception as e:
                 st.error("Error reading file: " + str(e))
-            try:
-                session = boto3.Session(region_name=awsregion)
-                da = DocAnalysis(file_path=tmp_file_path,
-                                 modelId=modelId,
-                                 boto3_session=session,
-                                 max_tokens=4096,
-                                 temperature=0.0,
-                                 enable_cri=True,
-                                 sliding_window_overlap=2,
-                                 system_prompt=sysprompt)
-                rresponse = da.run(message=question)
-                os.unlink(tmp_file_path)
-            except Exception as e:
-                st.error("Error reading PDF file: " + str(e))
-            try:
-                # Parse the response
-                # Assuming response is a dictionary (in "output") with the structure you provided
-                output_data = ast.literal_eval(str(rresponse["output"]))
-                try:
-                    if sysprompt == '' and len(output_data) > 1:
-                        tab_labels = [f"Page {n+1}" for n in range(len(output_data))]
-                        tabs = st.tabs(tab_labels)
-                        for n, page in enumerate(output_data):
-                            with tabs[n]:
-                                page = output_data[n]
-                                # Fill each tab with content
-                                st.subheader(f"Page {page['page']}")
-                                st.write(f"**Detected Languages:** {', '.join(page['detected_languages'])}")
-                                st.write("**Page Content:**")
-                                st.write(page['content'])
+            # Get PDF information
+            with open(tmp_file_path, 'rb') as pdf_file:
+                pdf_reader = PyPDF2.PdfReader(pdf_file)
+                total_pages = len(pdf_reader.pages)
+                # Initialize an empty string to store the text
+                full_text = ""
+                # Extract text from each page and add it to full_text
+                for page_num in range(total_pages):
+                    page = pdf_reader.pages[page_num]
+                    full_text += page.extract_text()
+                # Display information to the user
+                st.write(f"Total pages in document: {total_pages}")
+                # Create page selection options
+                all_page_options = list(range(1, total_pages + 1))
+                # Create a radio button for selection mode
+                selection_mode = st.radio(
+                    "Page selection mode:",
+                    ["Process first 20 pages", "Select specific pages (max 20)"]
+                )
+                pages_no = []  # Initialize the pages list
+                if selection_mode == "Process first 20 pages":
+                    # Set pages to [0] to indicate "process first 20 pages"
+                    pages_no = [0]
+                    st.info("The first 20 pages will be processed.")
+                    
+                    # Calculate how many pages will actually be processed
+                    pages_to_process = min(20, total_pages)
+                    st.write(f"Pages to be processed: 1 to {pages_to_process}")
+                else:  # Select specific pages
+                    # Create a multiselect widget for page selection
+                    selected_pages = st.multiselect(
+                        "Select up to 20 specific pages to process:",
+                        options=all_page_options,
+                        default=[1]  # Default to first page selected
+                    )
+                    # Check if too many pages are selected
+                    if len(selected_pages) > 20:
+                        st.warning(f"You've selected {len(selected_pages)} pages. Only the first 20 selected pages will be processed.")
+                        selected_pages = selected_pages[:20]
+                    # Update the pages list with the specific selections
+                    pages_no = selected_pages
+                    # Display selected pages
+                    if pages_no:
+                        st.write(f"Processing {len(pages_no)} specific pages: {pages_no}")
                     else:
-                        st.write("**Document Content:**")
-                        st.write(output_data)
-                except Exception as e:
-                    st.write("**Document Content:**")
-                    st.write(output_data)
-            except Exception as e:
-                st.write(str(rresponse))
-                st.error("Response error: " + str(e))
-            st.divider()
-            # Display token usage if available
-            try:
-                token_data = ast.literal_eval(str(rresponse["token_usage"]))
-                with st.expander("Token Usage"):
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Input Tokens", token_data["input_tokens"])
-                    col2.metric("Output Tokens", token_data["output_tokens"])
-                    col3.metric("Total Tokens", token_data["total_tokens"])
-                    st.write(f"**Used LLM:** {mymodel}")
-            except Exception as e:
-                st.error("Token usage error: " + str(e))
-    else:
-        pass
+                        st.warning("Please select at least one page to process.") 
+
+                myprompt_json = """Please provide a summary first. Double-check the context of all information. Do not discard any information. Extract all information including all values as a structured JSON object with key-value pairs. Include entities, dates, numerical data, relationships, and any other significant information present in the document. Organize related information into nested objects including numbered pages where appropriate for better clarity. Provide translations to English for content in other languages."""
+                myprompt_structured = "Please provide a summary on the whole document. Then extract all information including all values and present it in a well-structured format for readability. Include entities, dates, numerical data, relationships, and any other significant information present in the document. Use headings, bullet points, and tables where appropriate. For images, provide a numbered list with page numbers and descriptions. Format the output to be human-readable with clear sections and visual hierarchy. Double-check the context of all information. Do not discard any information. Answer in Markdown."
+                myprompt_trans = """Provide a brief summary at the beginning. Then display the complete original content in Markdown format, preserving all tables, font styles, and including placeholders for images/figures. Follow with English and German translations of the full content, maintaining the same formatting structure throughout all versions."""
+                myprompt_rechnungde = """Bitte extrahiere aus der angehängten Rechnung folgende Informationen, die für eine Überweisung des Rechnungsbetrags an den Empfänger notwendig sind:
+- Ist die Rechnung bereits bezahlt? (key: paid, value: yes/no)
+- Rechnungsdatum (key: invoice_date)
+- Rechnungsnummer (key: invoice_no)
+- Umfang und Art der Lieferung/Leistung (optional, key: subject)
+- Steuersatz (optional, key: tax_rate)
+- Kundennummer (optional, key: customer_no)
+- Rechnungsempfänger (optional, key: invoice_addressee)
+- Rechnungsaussteller (key: invoice_issuer)
+- Zahlungsempfänger (key: payment_recipient)
+- Empfänger IBAN (key: iban)
+- Empfänger BIC (key: bic)
+- Rechnungswährung (key: currency)
+- Betrag in Rechnungswährung (Dezimaltrenner: ",", key: invoice_amount)
+- SEPA Verwendungszweck mit Informationen wie Kundennummer und/oder Rechnungsnummer oder Kunden-Referenznummer (Verwendungszweck, key: payment_reference)
+- Zahlungsziel (optional, key: due_date)
+- Weitere wichtige Informationen zur Rechnung (optional, key: info)
+Wichtig: Die Ausgabe aller Informationen einschließlich aller Werte soll als strukturiertes, hierarchisches JSON-Objekt mit Schlüssel-Wert-Paaren erfolgen."""
+                myprompt_invoiceen = """Please extract the following information from the attached invoice, which is necessary for transferring the invoice amount to the recipient:
+- Is the invoice already paid? (key: paid, value: yes/no)
+- Invoice Date (key: invoice_date)
+- Invoice Number (key: invoice_no)
+- Scope and Type of Delivery/Service (optional, key: subject)
+- Tax Rate (optional, key: tax_rate)
+- Customer Number (optional, key: customer_no)
+- Invoice Addressee (optional, key: invoice_addressee)
+- Invoice Issuer (key: invoice_issuer)
+- Payment Recipient (key: payment_recipient)
+- Recipient IBAN (key: iban)
+- Recipient BIC (key: bic)
+- Invoice Currency (key: currency)
+- Amount in Currency (decimal separator: ".", key: invoice_amount)
+- SEPA Purpose of Payment or Payment Refererence like customer number and/or invoice number and/or customer reference number (key: payment_reference)
+- Due Date (optional, key: due_date)
+- Other important invoice information (optional, key: info)
+Important: The output of all information, including all values, should be a structured, hierarchical JSON object with key-value pairs."""
+                myprompt_figures = """Please provide a summary on the whole document. For all images, provide a numbered list with the page number and full description. Format the output to be human-readable with clear sections and visual hierarchy. Double-check the context of all information. Do not discard any information. Answer in Markdown."""
+                myprompt_tables = """Please provide a page-by-page extraction of all tables, including all table headers, all column names and all cell values. Format requirements: Display the complete original content in HTML format, preserving all structure, font styles, and including placeholders for images/figures. Maintain the original table structure, Use [?] as placeholders for any unreadable entries. Ensure all tabular information is preserved without omissions. Please verify the accuracy of all extracted information before submitting your response. Do not discard any information. """
+                mypromptsel = st.selectbox('Select Task', ('Structured Output', 'JSON Output', 'Explain Figures', 'Extract Tables', 'Translate', 'Invoice (EN)', 'Rechnung (DE)', 'None'))
+                if mypromptsel == 'JSON Output':
+                    myprompt = myprompt_json
+                    st.session_state.sysprompt_selectbox = 'SchemaSysPrompt'
+                elif mypromptsel == 'Translate':
+                    myprompt = myprompt_trans
+                    st.session_state.sysprompt_selectbox = 'SchemaSysPrompt'
+                elif mypromptsel == 'Structured Output':
+                    myprompt = myprompt_structured
+                    st.session_state.sysprompt_selectbox = 'SchemaSysPrompt'
+                elif mypromptsel == 'Explain Figures':
+                    myprompt = myprompt_figures
+                    st.session_state.sysprompt_selectbox = 'FigureSysPrompt'
+                elif mypromptsel == 'Extract Tables':
+                    myprompt = myprompt_tables
+                    st.session_state.sysprompt_selectbox = 'SchemaSysPrompt'
+                elif mypromptsel == 'Invoice (EN)':
+                    myprompt = myprompt_invoiceen
+                    st.session_state.sysprompt_selectbox = 'SchemaSysPrompt'
+                elif mypromptsel == 'Rechnung (DE)':
+                    myprompt = myprompt_rechnungde
+                    st.session_state.sysprompt_selectbox = 'SchemaSysPrompt'
+                else:
+                    myprompt = ''
+                with st.expander('Click here to change IDP parameters'):
+                    question = st.text_area('Question or Task ', value=myprompt, placeholder='Enter question or task...', key='question_selectbox')
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        mysysprompt = st.selectbox('Select additional system prompt (may overrule your prompt)', ('SchemaSysPrompt', 'SummarySysPrompt', 'FigureSysPrompt', 'None'), key='sysprompt_selectbox')
+                        if mysysprompt == 'SchemaSysPrompt':
+                            sysprompt = SystemPrompts().SchemaSysPrompt
+                        elif mysysprompt == 'SummarySysPrompt':
+                            sysprompt = SystemPrompts().SummarySysPrompt
+                        elif mysysprompt == 'FigureSysPrompt':
+                            sysprompt = SystemPrompts().FigureSysPrompt
+                        else:
+                            sysprompt = ''
+                    with col2:
+                        mymodel = st.selectbox('Select LLM', ('Claude Sonnet 3.5 v2', 'Claude Sonnet 3.7', 'AWS NOVA PRO'), key='model_selectbox')
+                        if mymodel == 'AWS NOVA PRO':
+                            modelId = LanguageModels.NOVA_PRO
+                        elif mymodel == 'Claude Sonnet 3.7':
+                            modelId = LanguageModels.CLAUDE_SONNET_37
+                        else:
+                            modelId = LanguageModels.CLAUDE_SONNET_V2
+
+                with st.form("my_form"):
+                    submitted = st.form_submit_button("Start analysis")
+                    if submitted is True and tmp_file_path is None:
+                        st.error('Error: No file uploaded')
+                    elif submitted is True and len(question)<1:
+                        st.error('Error: Question is empty')
+                    elif submitted is True and tmp_file_path is not None and len(question)>0:
+                        anon_usage_logging(tool = 'pdfinfo', 
+                                           docname = str(uploaded_file.name), 
+                                           mode = str(os.path.splitext(uploaded_file.name)[1].lower()), 
+                                           server = 'dev', 
+                                           usertimezone = 'None')
+                        try:
+                            rresponse = da_run(tmp_file_path, modelId, pages_no, sysprompt, question)
+                            os.unlink(tmp_file_path)
+                        except Exception as e:
+                            st.error("Error reading file: " + str(e))
+                        try:
+                            # Parse the response
+                            # Assuming response is a dictionary (in "output") with the structure you provided
+                            output_data = ast.literal_eval(str(rresponse["output"]))
+                            try:
+                                if sysprompt == '' and len(output_data) > 1:
+                                    tab_labels = [f"Page {n+1}" for n in range(len(output_data))]
+                                    tabs = st.tabs(tab_labels)
+                                    for n, page in enumerate(output_data):
+                                        with tabs[n]:
+                                            page = output_data[n]
+                                            # Fill each tab with content
+                                            st.subheader(f"Page {page['page']}")
+                                            # st.write(f"**Detected Languages:** {', '.join(page['detected_languages'])}")
+                                            #st.write("**Page Content:**")
+                                            #st.write(page['content'], unsafe_allow_html=True)
+                                            # Iterate through all keys in the dictionary (except 'page' which we already displayed)
+                                            for key, value in page.items():
+                                                if key != 'page':  # Skip the page number since we already displayed it
+                                                    # Format the key as a title (capitalize and replace underscores with spaces)
+                                                    formatted_key = key.replace('_', ' ').title()
+                                                    st.write(f"**{formatted_key}:**")
+                                                    st.write(value, unsafe_allow_html=True)
+                                                    st.write("---")  # Add a separator between sections
+                                else:
+                                    st.write("**Document Content:**")
+                                    st.write(output_data, unsafe_allow_html=True)
+                            except Exception as e:
+                                st.write("**Document Content:**")
+                                st.write(output_data, unsafe_allow_html=True)
+                        except Exception as e:
+                            output_data = str(rresponse["output"])
+                            st.write(output_data, unsafe_allow_html=True)
+                        st.divider()
+                        # Display token usage if available
+                        try:
+                            token_data = ast.literal_eval(str(rresponse["token_usage"]))
+                            with st.expander("Token Usage"):
+                                col1, col2, col3 = st.columns(3)
+                                col1.metric("Input Tokens", token_data["input_tokens"])
+                                col2.metric("Output Tokens", token_data["output_tokens"])
+                                col3.metric("Total Tokens", token_data["total_tokens"])
+                                st.write(f"**Used LLM:** {mymodel}")
+                        except Exception as e:
+                            st.error("Token usage error: " + str(e))
+                        if len(output_data) > 0:
+                            st.session_state.output_data = output_data
+                        else:
+                            st.session_state.output_data = ""
+                    else:
+                        pass
+                if len(st.session_state.output_data) > 0:
+                    with st.container():
+                        question = st.text_input(
+                            "Chat with the document (Sonnet 3.5 v2)",
+                            placeholder="Please enter your question about the document...",
+                            value=""
+                        )
+                        if question:
+                            SYSTEM_PROMPT_ENGLISH = """<system_message>You are a helpful assistant. Please answer in Markdown (or HTML) and always start
+                                                    the final answer with "Final Answer: ". Also repeat your last thought after "Final Answer: ".
+                                                    Please also always show the path or the train of thought to the result in the final answer.
+                                                    For calculations always use NumExpr. Please answer my questions as comprehensively as possible.
+                                                    Go into detail on all aspects, elaborate your thought process and arguments, and support your statements
+                                                    with examples, data, or other evidence if possible. I want to thoroughly understand the topic, so do not
+                                                    hesitate to make your answers as extensive and complete as feasible. However, avoid repetitions or
+                                                    digressing excessively from the core topic. Take a deep breath before answering. Correctness and quality
+                                                    is more important than the speed of answering. Detect the language that the user is using. Make sure to
+                                                    use the same language in your response. Do not mention the language explicitly.</system_message>"""
+                            # Include context
+                            context = ""
+                            if st.session_state.get("output_data"):
+                                context += f"\n\nDocument Summary: {st.session_state.output_data}"
+                                with st.expander("Document Summary (context)"):
+                                    st.write(context)
+                            st.session_state.my_input = f"{SYSTEM_PROMPT_ENGLISH} This is the raw document (only text) <raw>{full_text}</raw> \
+                                                          and this is the document summary context: {context}. And here is the question: {question}"
+                            with st.spinner(text="In progress..."):
+                                try:
+                                    answer = run_my_langchain(st.session_state.my_input)
+                                    # Process the answer with more specific replacements
+                                    processed_answer = answer['output']
+                                    for prefix in ["Final Answer:", "Answer:"]:
+                                        processed_answer = processed_answer.replace(prefix, "")
+                                    st.session_state.answer_claude = processed_answer
+                                    # Update message history
+                                    if "message" not in st.session_state:
+                                        st.session_state.message = []
+                                    st.session_state.message.append({"role": "human", "content": question.strip()})
+                                    # Process the answer for display
+                                    display_answer = st.session_state.answer_claude
+                                    display_answer = display_answer.replace("Final Answer:", "Previous Final:")
+                                    display_answer = display_answer.replace("Answer:", "Previous:")
+                                    st.session_state.message.append({"role": "assistant", "content": display_answer})
+                                except ConnectionError as conn_err:
+                                    st.error(f"Connection error: {conn_err}")
+                                except ValueError as val_err:
+                                    st.error(f"Value error: {val_err}")
+                                except Exception as e:
+                                    st.error(f"An unexpected error occurred: {str(e)}")
+                            # Display message history
+                            if st.session_state.get("message") and len(st.session_state.message) > 0:
+                                for m in st.session_state.message:
+                                    with st.chat_message(m["role"]):
+                                        st.markdown(m["content"], unsafe_allow_html=True)
