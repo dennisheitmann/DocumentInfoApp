@@ -11,4 +11,6 @@ Streamlit Document Content Information App using AWS Bedrock and rhubarb
 ### Upload MP4 video file and get content information
 `video_info_app.py`
 
+As a prerequisite, a Lambda function (`video_lambda.py`) must be added in AWS.
+
 by Dennis Heitmann
