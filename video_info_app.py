@@ -313,7 +313,7 @@ def invoke_lambda_with_s3_url(lambda_function_name, s3_url):
 
 @st.cache_data(ttl='1h')
 def video_bda(s3_url):
-    lambda_function_name = "arn:aws:lambda:us-east-1:465963045512:function:A1NVVLAMP_IDP_BDA_VideoProcessing"  # Replace with your Lambda function name
+    lambda_function_name = "arn:aws:lambda:us-east-1:__NUMBER__:function:__NAME__"  # Replace with your Lambda function name
     try:
         # Call the Lambda function and get the response
         result = invoke_lambda_with_s3_url(lambda_function_name, s3_url)
