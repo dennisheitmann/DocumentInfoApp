@@ -153,9 +153,9 @@ st.header('Information Extraction Tool')
 
 from PIL import Image
 
-def jpg_to_pdf_pillow_bytesio(jpg_bytes, output_pdf=None):
+def img_to_pdf_pillow_bytesio(img_bytes, output_pdf=None):
     # Open the image from bytes
-    image = Image.open(BytesIO(jpg_bytes))
+    image = Image.open(BytesIO(img_bytes))
     # Convert to RGB if the image is in RGBA mode
     if image.mode == 'RGBA':
         image = image.convert('RGB')
