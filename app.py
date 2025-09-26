@@ -455,7 +455,7 @@ Important: The output of all information, including all values, should be a stru
                                                     # Format the key as a title (capitalize and replace underscores with spaces)
                                                     formatted_key = key.replace('_', ' ').title()
                                                     st.write(f"**{formatted_key}:**")
-                                                    st.write(value, unsafe_allow_html=True)
+                                                    st.markdown(value, unsafe_allow_html=True)
                                                     st.write("---")  # Add a separator between sections
                                 else:
                                     st.write("**Document Content:**")
