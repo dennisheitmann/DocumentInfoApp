@@ -151,7 +151,7 @@ def reset_chat_context():
 st.set_page_config(page_title='Information Extraction', layout='wide')
 st.header('Information Extraction Tool')
 
-from PIL import Image
+from PIL import Image, ExifTags
 
 def img_to_pdf_pillow_bytesio(img_bytes, output_pdf=None):
     # Open the image from bytes
@@ -162,7 +162,7 @@ def img_to_pdf_pillow_bytesio(img_bytes, output_pdf=None):
     # Create a BytesIO object to store the PDF
     pdf_bytes = BytesIO()
     # Save as PDF to the BytesIO object
-    image.save(pdf_bytes, "PDF", resolution=300.0)
+    image.save(pdf_bytes, "PDF", resolution=150.0)
     # Reset the pointer to the beginning of the BytesIO object
     pdf_bytes.seek(0)
     # If output_pdf is provided, write to file
@@ -170,6 +170,90 @@ def img_to_pdf_pillow_bytesio(img_bytes, output_pdf=None):
         with open(output_pdf, 'wb') as f:
             f.write(pdf_bytes.getvalue())
     return pdf_bytes
+
+def img_to_png_pillow_bytesio(img_bytes, auto_rotate=True, max_width=1920, colors=256):
+    # Print original size
+    original_size = len(img_bytes)
+    # Open the image from bytes
+    image = Image.open(BytesIO(img_bytes))
+    # Auto-rotate image based on EXIF data if enabled
+    if auto_rotate:
+        try:
+            # Check if image has EXIF data
+            if hasattr(image, '_getexif') and image._getexif() is not None:
+                exif = dict((ExifTags.TAGS[k], v) for k, v in image._getexif().items()
+                           if k in ExifTags.TAGS)
+                # Check for orientation tag
+                if 'Orientation' in exif:
+                    orientation = exif['Orientation']
+                    # Apply rotation based on EXIF orientation
+                    if orientation == 2:
+                        image = image.transpose(Image.FLIP_LEFT_RIGHT)
+                    elif orientation == 3:
+                        image = image.transpose(Image.ROTATE_180)
+                    elif orientation == 4:
+                        image = image.transpose(Image.FLIP_TOP_BOTTOM)
+                    elif orientation == 5:
+                        image = image.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_90)
+                    elif orientation == 6:
+                        image = image.transpose(Image.ROTATE_270)
+                    elif orientation == 7:
+                        image = image.transpose(Image.FLIP_LEFT_RIGHT).transpose(Image.ROTATE_270)
+                    elif orientation == 8:
+                        image = image.transpose(Image.ROTATE_90)
+                    else:
+                        pass
+                        #print("No EXIF rotation needed (orientation normal)")
+                else:
+                    #pass
+                    print("No EXIF orientation data found")
+            else:
+                #pass
+                print("No EXIF data found in image")
+        except Exception as e:
+            print(f"Error processing EXIF rotation: {str(e)}")
+    # Resize image if it's larger than max_width
+    if image.width > max_width:
+        ratio = max_width / float(image.width)
+        new_height = int(image.height * ratio)
+        image = image.resize((max_width, new_height), Image.LANCZOS)
+    # Handle alpha channel optimization
+    has_alpha = image.mode in ('RGBA', 'LA')
+    if has_alpha:
+        # Check if alpha channel is actually being used meaningfully
+        alpha = image.getchannel('A')
+        if alpha.getextrema() == (255, 255):  # All pixels are fully opaque
+            image = image.convert('RGB' if image.mode == 'RGBA' else 'L')
+            has_alpha = False
+        # Reduce colors if specified (great for PNG size reduction)
+    if image.mode not in ('L', 'LA', 'P'):
+        # Don't reduce if already grayscale or paletted
+        if has_alpha:
+            # Handle images with transparency
+            # Split alpha channel
+            rgb_image = image.convert('RGB')
+            alpha_channel = image.getchannel('A')
+            # Quantize the RGB part
+            quantized = rgb_image.quantize(colors=colors, method=2, dither=Image.FLOYDSTEINBERG)
+            # Convert back to RGBA and restore alpha
+            image = quantized.convert('RGBA')
+            image.putalpha(alpha_channel)
+        else:
+            image = image.quantize(colors=colors, method=2, dither=Image.FLOYDSTEINBERG)
+    # Create a BytesIO object to store the PDF
+    png_bytes = BytesIO()
+    # Save as PNG to the BytesIO object
+    image.save(png_bytes, "PNG", optimize=True, compress_level=9)
+    # Reset the pointer to the beginning of the BytesIO object
+    png_bytes.seek(0)
+    # Get size
+    png_bytes.seek(0)
+    png_size = len(png_bytes.getvalue())
+    # Print summary
+    print(f"Original: {original_size / 1024:.2f} KB")
+    print(f"Final: {png_size / 1024:.2f} KB ({(png_size/original_size)*100:.1f}% of original size)")
+    png_bytes.seek(0)
+    return png_bytes
 
 with st.container():
     # Initialize session state variables at the beginning of your app
@@ -184,13 +268,14 @@ with st.container():
     uploaded_file = st.file_uploader("**Choose a file**", accept_multiple_files=False, type=['pdf', 'jpg', 'png'], on_change=reset_chat_context)
     if uploaded_file is not None:
         if os.path.splitext(uploaded_file.name)[1].lower() in ['.jpg', '.jpeg']:
-            new_file_path = uploaded_file.name + '.pdf'
-            uploaded_file = img_to_pdf_pillow_bytesio(uploaded_file.getvalue())
+            new_file_path = uploaded_file.name + '.png'
+            uploaded_file = img_to_png_pillow_bytesio(uploaded_file.getvalue())
             uploaded_file.name = new_file_path
+            is_pdf = False
         elif os.path.splitext(uploaded_file.name)[1].lower() in ['.png']:
-            new_file_path = uploaded_file.name + '.pdf'
-            uploaded_file = img_to_pdf_pillow_bytesio(uploaded_file.getvalue())
-            uploaded_file.name = new_file_path
+            is_pdf = False
+        else:
+            is_pdf = True
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1].lower()) as tmp_file:
             try:
                 # Reset the file pointer of the uploaded file to the beginning
@@ -200,53 +285,55 @@ with st.container():
                 tmp_file_path = tmp_file.name
             except Exception as e:
                 st.error("Error reading file: " + str(e))
-            # Get PDF information
-            with open(tmp_file_path, 'rb') as pdf_file:
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
-                total_pages = len(pdf_reader.pages)
-                # Initialize an empty string to store the text
-                full_text = ""
-                # Extract text from each page and add it to full_text
-                for page_num in range(total_pages):
-                    page = pdf_reader.pages[page_num]
-                    full_text += page.extract_text()
-                # Display information to the user
-                st.write(f"Total pages in document: {total_pages}")
-                # Create page selection options
-                all_page_options = list(range(1, total_pages + 1))
-                # Create a radio button for selection mode
-                selection_mode = st.radio(
-                    "Page selection mode:",
-                    ["Process first 20 pages", "Select specific pages (max 20)"]
-                )
-                pages_no = []  # Initialize the pages list
-                if selection_mode == "Process first 20 pages":
-                    # Set pages to [0] to indicate "process first 20 pages"
-                    pages_no = [0]
-                    st.info("The first 20 pages will be processed.")
-                    
-                    # Calculate how many pages will actually be processed
-                    pages_to_process = min(20, total_pages)
-                    st.write(f"Pages to be processed: 1 to {pages_to_process}")
-                else:  # Select specific pages
-                    # Create a multiselect widget for page selection
-                    selected_pages = st.multiselect(
-                        "Select up to 20 specific pages to process:",
-                        options=all_page_options,
-                        default=[1]  # Default to first page selected
+            if is_pdf:
+                # Get PDF information
+                with open(tmp_file_path, 'rb') as pdf_file:
+                    pdf_reader = PyPDF2.PdfReader(pdf_file)
+                    total_pages = len(pdf_reader.pages)
+                    # Initialize an empty string to store the text
+                    full_text = ""
+                    # Extract text from each page and add it to full_text
+                    for page_num in range(total_pages):
+                        page = pdf_reader.pages[page_num]
+                        full_text += page.extract_text()
+                    # Display information to the user
+                    st.write(f"Total pages in document: {total_pages}")
+                    # Create page selection options
+                    all_page_options = list(range(1, total_pages + 1))
+                    # Create a radio button for selection mode
+                    selection_mode = st.radio(
+                        "Page selection mode:",
+                        ["Process first 20 pages", "Select specific pages (max 20)"]
                     )
-                    # Check if too many pages are selected
-                    if len(selected_pages) > 20:
-                        st.warning(f"You've selected {len(selected_pages)} pages. Only the first 20 selected pages will be processed.")
-                        selected_pages = selected_pages[:20]
-                    # Update the pages list with the specific selections
-                    pages_no = selected_pages
-                    # Display selected pages
-                    if pages_no:
-                        st.write(f"Processing {len(pages_no)} specific pages: {pages_no}")
-                    else:
-                        st.warning("Please select at least one page to process.") 
-
+                    pages_no = []  # Initialize the pages list
+                    if selection_mode == "Process first 20 pages":
+                        # Set pages to [0] to indicate "process first 20 pages"
+                        pages_no = [0]
+                        st.info("The first 20 pages will be processed.")
+                        
+                        # Calculate how many pages will actually be processed
+                        pages_to_process = min(20, total_pages)
+                        st.write(f"Pages to be processed: 1 to {pages_to_process}")
+                    else:  # Select specific pages
+                        # Create a multiselect widget for page selection
+                        selected_pages = st.multiselect(
+                            "Select up to 20 specific pages to process:",
+                            options=all_page_options,
+                            default=[1]  # Default to first page selected
+                        )
+                        # Check if too many pages are selected
+                        if len(selected_pages) > 20:
+                            st.warning(f"You've selected {len(selected_pages)} pages. Only the first 20 selected pages will be processed.")
+                            selected_pages = selected_pages[:20]
+                        # Update the pages list with the specific selections
+                        pages_no = selected_pages
+                        # Display selected pages
+                        if pages_no:
+                            st.write(f"Processing {len(pages_no)} specific pages: {pages_no}")
+                        else:
+                            st.warning("Please select at least one page to process.") 
+                else:
+                    pages_no = [0]                
                 myprompt_json = """Please provide a summary first. Double-check the context of all information. Do not discard any information. Extract all information including all values as a structured JSON object with key-value pairs. Include entities, dates, numerical data, relationships, and any other significant information present in the document. Organize related information into nested objects including numbered pages where appropriate for better clarity. Provide translations to English for content in other languages."""
                 myprompt_structured = "Please provide a summary on the whole document. Then extract all information including all values and present it in a well-structured format for readability. Include entities, dates, numerical data, relationships, and any other significant information present in the document. Use headings, bullet points, and tables where appropriate. For images, provide a numbered list with page numbers and descriptions. Format the output to be human-readable with clear sections and visual hierarchy. Double-check the context of all information. Do not discard any information. Answer in Markdown."
                 myprompt_trans = """Provide a brief summary at the beginning. Then display the complete original content in Markdown format, preserving all tables, font styles, and including placeholders for images/figures. Follow with English and German translations of the full content, maintaining the same formatting structure throughout all versions."""
