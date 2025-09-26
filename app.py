@@ -374,7 +374,7 @@ Wichtig: Die Ausgabe aller Informationen einschließlich aller Werte soll als st
 - Other important invoice information (optional, key: info)
 Important: The output of all information, including all values, should be a structured, hierarchical JSON object with key-value pairs."""
                 myprompt_figures = """Please provide a summary on the whole document. For all images, provide a numbered list with the page number and full description. Format the output to be human-readable with clear sections and visual hierarchy. Double-check the context of all information. Do not discard any information. Answer in Markdown."""
-                myprompt_tables = """Please provide a page-by-page extraction of all tables, including all table headers, all column names and all cell values. Format requirements: Display the complete original content in HTML format, preserving all structure, font styles, and including placeholders for images/figures. Maintain the original table structure, Use [?] as placeholders for any unreadable entries. Ensure all tabular information is preserved without omissions. Please verify the accuracy of all extracted information before submitting your response. Do not discard any information. """
+                myprompt_tables = """Please provide a page-by-page extraction of all tables, including all table headers, all column names and all cell values. Format requirements: Display the complete original content in HTML format without Markdown elements, preserving all structure, font styles, and including placeholders for images/figures. Maintain the original table structure, Use [?] as placeholders for any unreadable entries. Ensure all tabular information is preserved without omissions. Please verify the accuracy of all extracted information before submitting your response. Do not discard any information. """
                 mypromptsel = st.selectbox('Select Task', ('Structured Output', 'JSON Output', 'Explain Figures', 'Extract Tables', 'Translate', 'Invoice (EN)', 'Rechnung (DE)', 'None'))
                 if mypromptsel == 'JSON Output':
                     myprompt = myprompt_json
@@ -459,13 +459,13 @@ Important: The output of all information, including all values, should be a stru
                                                     st.write("---")  # Add a separator between sections
                                 else:
                                     st.write("**Document Content:**")
-                                    st.write(output_data, unsafe_allow_html=True)
+                                    st.markdown(output_data, unsafe_allow_html=True)
                             except Exception as e:
                                 st.write("**Document Content:**")
-                                st.write(output_data, unsafe_allow_html=True)
+                                st.markdown(output_data, unsafe_allow_html=True)
                         except Exception as e:
                             output_data = str(rresponse["output"])
-                            st.write(output_data, unsafe_allow_html=True)
+                            st.markdown(output_data, unsafe_allow_html=True)
                         st.divider()
                         # Display token usage if available
                         try:
