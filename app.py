@@ -128,7 +128,7 @@ def da_run(tmp_file_path, modelId, pages_no, sysprompt, question):
                      modelId=modelId,
                      boto3_session=session,
                      max_tokens=4096,
-                     temperature=0.0,
+                     temperature=0.1,
                      enable_cri=True,
                      pages=pages_no,
                      sliding_window_overlap=0,
