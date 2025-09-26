@@ -171,7 +171,7 @@ def img_to_pdf_pillow_bytesio(img_bytes, output_pdf=None):
             f.write(pdf_bytes.getvalue())
     return pdf_bytes
 
-def img_to_png_pillow_bytesio(img_bytes, auto_rotate=True, max_width=1920, colors=256):
+def img_to_png_pillow_bytesio(img_bytes, auto_rotate=True, max_width=2560, colors=256):
     # Print original size
     original_size = len(img_bytes)
     # Open the image from bytes
