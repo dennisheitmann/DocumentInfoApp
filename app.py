@@ -265,6 +265,8 @@ with st.container():
         st.session_state.my_input = ""
     if "output_data" not in st.session_state:
         st.session_state.output_data = ""
+    if "full_text" not in st.session_state:
+        st.session_state.full_text = ""
     uploaded_file = st.file_uploader("**Choose a file**", accept_multiple_files=False, type=['pdf', 'jpg', 'png'], on_change=reset_chat_context)
     if uploaded_file is not None:
         if os.path.splitext(uploaded_file.name)[1].lower() in ['.jpg', '.jpeg']:
@@ -291,11 +293,11 @@ with st.container():
                     pdf_reader = PyPDF2.PdfReader(pdf_file)
                     total_pages = len(pdf_reader.pages)
                     # Initialize an empty string to store the text
-                    full_text = ""
+                    st.session_state.full_text = ""
                     # Extract text from each page and add it to full_text
                     for page_num in range(total_pages):
                         page = pdf_reader.pages[page_num]
-                        full_text += page.extract_text()
+                        st.session_state.full_text += page.extract_text()
                     # Display information to the user
                     st.write(f"Total pages in document: {total_pages}")
                     # Create page selection options
@@ -508,7 +510,7 @@ Important: The output of all information, including all values, should be a stru
                             context += f"\n\nDocument Summary: {st.session_state.output_data}"
                             with st.expander("Document Summary (context)"):
                                 st.write(context)
-                        st.session_state.my_input = f"{SYSTEM_PROMPT_ENGLISH} This is the raw document (only text) <raw>{full_text}</raw> \
+                        st.session_state.my_input = f"{SYSTEM_PROMPT_ENGLISH} This is the raw document (only text) <raw>{st.session_state.full_text}</raw> \
                                                       and this is the document summary context: {context}. And here is the question: {question}"
                         with st.spinner(text="In progress..."):
                             try:
