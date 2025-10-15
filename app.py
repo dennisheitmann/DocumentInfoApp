@@ -292,7 +292,7 @@ with st.container():
                 with open(tmp_file_path, 'rb') as pdf_file:
                     pdf_reader = PyPDF2.PdfReader(pdf_file)
                     total_pages = len(pdf_reader.pages)
-                    # Initialize an empty string to store the text
+                    # Empty full_text to fill it with new document contents 
                     st.session_state.full_text = ""
                     # Extract text from each page and add it to full_text
                     for page_num in range(total_pages):
